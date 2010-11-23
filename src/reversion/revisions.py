@@ -11,6 +11,7 @@ from datetime import datetime
 
 from django.contrib.contenttypes.models import ContentType
 from django.core import serializers
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
 from django.db.models.query import QuerySet
 from django.db.models.signals import post_save
@@ -281,9 +282,12 @@ class RevisionManager(object):
                         # Ensure we're not saving an exact replica of the previous version.
                         # This can occur, for instance, if the user is only including certain fields
                         # in version control.
-                        previous_version = Version.objects.get_for_date(obj, datetime.now())
-                        if previous_version.serialized_data == serialized_data:
-                            continue
+                        try:
+                            previous_version = Version.objects.get_for_date(obj, datetime.now())
+                            if previous_version.serialized_data == serialized_data:
+                                continue
+                        except ObjectDoesNotExist:
+                            pass
                         
                         versions_created = True
                         Version.objects.create(revision=revision,
