@@ -7,6 +7,7 @@ except ImportError:
     from django.utils.functional import wraps  # Python 2.3, 2.4 fallback.
 
 from threading import local
+from datetime import datetime
 
 from django.contrib.contenttypes.models import ContentType
 from django.core import serializers
@@ -265,7 +266,9 @@ class RevisionManager(object):
                     # db, with the actual models sent to reversion.
                     diff = revision_set.difference(models)
                     revision_set = models.union(diff)
+                    
                     # Save version models.
+                    versions_created = False
                     for obj in revision_set:
                         # Proxy models should not actually be saved to the revision set.
                         if obj._meta.proxy:
@@ -274,14 +277,29 @@ class RevisionManager(object):
                         object_id = unicode(obj.pk)
                         content_type = ContentType.objects.get_for_model(obj)
                         serialized_data = serializers.serialize(registration_info.format, [obj], fields=registration_info.fields)
+                        
+                        # Ensure we're not saving an exact replica of the previous version.
+                        # This can occur, for instance, if the user is only including certain fields
+                        # in version control.
+                        previous_version = Version.objects.get_for_date(obj, datetime.now())
+                        print previous_version.serialized_data, serialized_data
+                        if previous_version.serialized_data == serialized_data:
+                            continue
+                        
+                        versions_created = True
                         Version.objects.create(revision=revision,
                                                object_id=object_id,
                                                content_type=content_type,
                                                format=registration_info.format,
                                                serialized_data=serialized_data,
                                                object_repr=unicode(obj))
-                    for cls, kwargs in self._state.meta:
-                        cls._default_manager.create(revision=revision, **kwargs)
+                    
+                    if not versions_created:
+                        # No changes were made to any models that required a revision, roll back.
+                        revision.delete()
+                    else:      
+                        for cls, kwargs in self._state.meta:
+                            cls._default_manager.create(revision=revision, **kwargs)
             finally:
                 self._state.clear()
         
