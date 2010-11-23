@@ -282,7 +282,6 @@ class RevisionManager(object):
                         # This can occur, for instance, if the user is only including certain fields
                         # in version control.
                         previous_version = Version.objects.get_for_date(obj, datetime.now())
-                        print previous_version.serialized_data, serialized_data
                         if previous_version.serialized_data == serialized_data:
                             continue
                         

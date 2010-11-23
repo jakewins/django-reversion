@@ -4,6 +4,7 @@
 from django.contrib.auth.models import User
 from django.contrib.contenttypes.models import ContentType
 from django.core import serializers
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
 
 import reversion
@@ -73,7 +74,24 @@ class Version(models.Model):
         data = self.serialized_data
         if isinstance(data, unicode):
             data = data.encode("utf8")
-        return list(serializers.deserialize(self.format, data))[0]
+        obj = list(serializers.deserialize(self.format, data))[0]
+        
+        # Populate un-versioned fields with data from the "real" current object
+        from reversion.revisions import revision
+        fields = revision.get_registration_info(obj.object.__class__).fields
+        
+        if len(fields) > 0:
+            try:
+                current_obj = self.content_type.model_class().objects.get(id=self.object_id)
+                
+                for field in current_obj._meta.fields:
+                    if not field.name in fields:
+                        setattr(obj.object, field.name, getattr(current_obj, field.name))
+                            
+            except ObjectDoesNotExist:
+                pass
+        
+        return obj
     
     object_version = property(get_object_version,
                               doc="The stored version of the model.")
